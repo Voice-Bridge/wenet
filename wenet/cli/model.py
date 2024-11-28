@@ -135,6 +135,51 @@ class Model:
             result['tokens'] = tokens_info
         return result
 
+    def transcribe_with_labels(self, audio_file: str, labels_dict: dict) -> dict:
+        feats = self.compute_feats(audio_file)
+        encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
+        encoder_lens = torch.tensor([encoder_out.size(1)],
+                                    dtype=torch.long,
+                                    device=encoder_out.device)
+        res_dict = {}
+
+        for key, labels in labels_dict.items():
+            # 对每一个音素
+            max_confidence = -1
+            max_result = {}
+            for label in labels:
+                label_t = self.tokenize(label)
+                ctc_prefix_results = [
+                    DecodeResult(tokens=label_t,
+                                 score=0.0,
+                                 times=[0],
+                                 nbest=[label_t],
+                                 nbest_scores=[0.0],
+                                 nbest_times=[[0]])
+                ]
+                rescoring_results = attention_rescoring(self.model, ctc_prefix_results,
+                                                        encoder_out, encoder_lens, 0.3,
+                                                        0.5)
+                res = rescoring_results[0]
+                result = {}
+                result['text'] = ''.join([self.char_dict[x] for x in res.tokens])
+                result['confidence'] = res.confidence
+                # print(result)
+                if result['confidence'] > max_confidence:
+                    max_confidence = result['confidence']
+                    max_result = copy.deepcopy(result)
+            res_dict[key] = copy.deepcopy(max_result)
+        # print(res_dict)
+        max_confi = -1
+        max_yinsu = ''
+        for key, value in res_dict.items():
+            if value['confidence'] > max_confi:
+                max_confi = value['confidence']
+                max_yinsu = key
+        print(f'===== max yinsu {max_yinsu}, max confi {max_confi}')
+        # return {"yinsu": max_yinsu, "confidence": max_confi }
+        return {"yinsu_with_grade": res_dict}
+
     def transcribe(self, audio_file: str, tokens_info: bool = False) -> dict:
         return self._decode(audio_file, tokens_info)
 
