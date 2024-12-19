@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import copy
 
 import torch
 import torchaudio
@@ -27,8 +26,8 @@ from wenet.transformer.search import (attention_rescoring,
                                       ctc_prefix_beam_search, DecodeResult)
 from wenet.utils.context_graph import ContextGraph
 from wenet.utils.common import TORCH_NPU_AVAILABLE  # noqa just ensure to check torch-npu
-
-
+from wenet.cli.paraformer_model import load_model as load_paraformer
+from wenet.cli.xunfei_model import SpeechToText
 class Model:
 
     def __init__(self,
@@ -136,51 +135,6 @@ class Model:
             result['tokens'] = tokens_info
         return result
 
-    def transcribe_with_labels(self, audio_file: str, labels_dict: dict) -> dict:
-        feats = self.compute_feats(audio_file)
-        encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
-        encoder_lens = torch.tensor([encoder_out.size(1)],
-                                    dtype=torch.long,
-                                    device=encoder_out.device)
-        res_dict = {}
-
-        for key, labels in labels_dict.items():
-            # 对每一个音素
-            max_confidence = -1
-            max_result = {}
-            for label in labels:
-                label_t = self.tokenize(label)
-                ctc_prefix_results = [
-                    DecodeResult(tokens=label_t,
-                                 score=0.0,
-                                 times=[0],
-                                 nbest=[label_t],
-                                 nbest_scores=[0.0],
-                                 nbest_times=[[0]])
-                ]
-                rescoring_results = attention_rescoring(self.model, ctc_prefix_results,
-                                                        encoder_out, encoder_lens, 0.3,
-                                                        0.5)
-                res = rescoring_results[0]
-                result = {}
-                result['text'] = ''.join([self.char_dict[x] for x in res.tokens])
-                result['confidence'] = res.confidence
-                # print(result)
-                if result['confidence'] > max_confidence:
-                    max_confidence = result['confidence']
-                    max_result = copy.deepcopy(result)
-            res_dict[key] = copy.deepcopy(max_result)
-        # print(res_dict)
-        max_confi = -1
-        max_yinsu = ''
-        for key, value in res_dict.items():
-            if value['confidence'] > max_confi:
-                max_confi = value['confidence']
-                max_yinsu = key
-        print(f'===== max yinsu {max_yinsu}, max confi {max_confi}')
-        # return {"yinsu": max_yinsu, "confidence": max_confi }
-        return {"yinsu_with_grade": res_dict}
-
     def transcribe(self, audio_file: str, tokens_info: bool = False) -> dict:
         return self._decode(audio_file, tokens_info)
 
@@ -210,6 +164,15 @@ def load_model(language: str = None,
                context_path: str = None,
                context_score: float = 6.0,
                device: str = "cpu") -> Model:
+    if language == "paraformer":
+        model = load_paraformer()
+        return model
+    if language == "TencentASR":
+        print("language",language)
+    if language == "XunfeiASR":
+        model = SpeechToText.load_model('xunfei_api')
+        print("xunfeiishere")
+        return model
     if model_dir is None:
         model_dir = Hub.get_model_by_lang(language)
 
