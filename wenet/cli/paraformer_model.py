@@ -29,18 +29,22 @@ class Paraformer:
         feats_lst = []
         feats_lens_lst = []
         for audio in audio_files:
+
+
             if isinstance(audio, bytes):
                 with io.BytesIO(audio) as fobj:
                     waveform, sample_rate = torchaudio.load(fobj,
                                                             normalize=False)
             else:
                 waveform, sample_rate = torchaudio.load(audio, normalize=False)
+
+            waveform = waveform.to(torch.float)
             if sample_rate != self.resample_rate:
                 waveform = torchaudio.transforms.Resample(
                     orig_freq=sample_rate,
                     new_freq=self.resample_rate)(waveform)
 
-            waveform = waveform.to(torch.float)
+
             feats = kaldi.fbank(waveform,
                                 num_mel_bins=80,
                                 frame_length=25,

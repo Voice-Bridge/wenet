@@ -27,7 +27,8 @@ from wenet.transformer.search import (attention_rescoring,
                                       ctc_prefix_beam_search, DecodeResult)
 from wenet.utils.context_graph import ContextGraph
 from wenet.utils.common import TORCH_NPU_AVAILABLE  # noqa just ensure to check torch-npu
-
+from wenet.cli.paraformer_model import load_model as load_paraformer
+from wenet.cli.xunfei_model import SpeechToText
 
 class Model:
 
@@ -210,12 +211,20 @@ def load_model(language: str = None,
                context_path: str = None,
                context_score: float = 6.0,
                device: str = "cpu") -> Model:
-    if model_dir is None:
-        model_dir = Hub.get_model_by_lang(language)
 
     if gpu != -1:
         # remain the original usage of gpu
         device = "cuda"
+    if language == "paraformer":
+        model = load_paraformer()
+        return model
+    if language == "XunfeiASR":
+        model = SpeechToText.load_model('xunfei_api')
+        return model
+    if model_dir is None:
+        model_dir = Hub.get_model_by_lang(language)
+
+
     model = Model(model_dir, gpu, beam, context_path, context_score)
     model.device = torch.device(device)
     model.model.to(device)
