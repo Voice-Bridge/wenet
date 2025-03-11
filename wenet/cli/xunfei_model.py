@@ -21,6 +21,8 @@
 #  可添加语种或方言，添加后会显示该方言的参数值
 #  错误码链接：https://www.xfyun.cn/document/error-code （code返回错误码时必看）
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+import os.path
+
 import websocket
 import datetime
 import hashlib
@@ -39,12 +41,18 @@ from threading import Thread, Lock
 import re
 import json
 import numpy as np
+
 STATUS_FIRST_FRAME = 0  # 第一帧的标识
 STATUS_CONTINUE_FRAME = 1  # 中间帧标识
 STATUS_LAST_FRAME = 2  # 最后一帧的标识
 
 global_sentence = ''
 
+
+def softmax(x):
+    """Compute softmax values for each set of scores in x."""
+    e_x = np.exp(x - np.max(x))  # 防止数值溢出
+    return e_x / e_x.sum()
 
 class Ws_Param(object):
     # 初始化
@@ -57,7 +65,8 @@ class Ws_Param(object):
         # 公共参数(common)
         self.CommonArgs = {"app_id": self.APPID}
         # 业务参数(business)，更多个性化参数可在官网查看
-        self.BusinessArgs = {"domain": "iat", "language": "zh_cn", "accent": "mandarin", "vinfo":1, "vad_eos":10000,"nbest": 5}
+        self.BusinessArgs = {"domain": "iat", "language": "zh_cn", "accent": "mandarin", "vinfo": 1, "vad_eos": 10000,
+                             "nbest": 5}
 
     # 生成url
     def create_url(self):
@@ -130,11 +139,11 @@ class SpeechToText:
         audio = AudioSegment.from_file(wav_file)
         # 转换为单声道,降频
         audio = audio.set_channels(1).set_frame_rate(16000)
-        audio.export("D://sample_audios//tmpfile.wav", format="wav")
+        audio.export("D://tmpfile.wav", format="wav")
         # global wsParam
         self.wsParam = Ws_Param(APPID='c5966e64', APISecret='NmQyNDdjNjVkNWQ2Y2ZlMGJmZDgwZWIx',
-                           APIKey='9b24f7330fc0923186ae95e0da03ccbf',
-                           AudioFile="D://sample_audios//tmpfile.wav")
+                                APIKey='9b24f7330fc0923186ae95e0da03ccbf',
+                                AudioFile="D://tmpfile.wav")
         websocket.enableTrace(False)
         wsUrl = self.wsParam.create_url()
         ws = websocket.WebSocketApp(wsUrl, on_message=self.on_message, on_error=self.on_error, on_close=self.on_close)
@@ -142,34 +151,7 @@ class SpeechToText:
         ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
         # 使用正则表达式去除标点符号
         cleaned_sentence = re.sub(r'[, . ! ^，。！…]', '', global_sentence)
-        print("cleaned_sentence",cleaned_sentence)
-        result = {
-            'confidence': '无返回值',
-            'text': cleaned_sentence
-        }
-        # print(result)
-        return result
 
-
-    def transcribe_with_labels(self, audio_file: str, target: str) -> dict:
-        # wav_file =
-        wav_file = audio_file
-        audio = AudioSegment.from_file(wav_file)
-        # 转换为单声道,降频
-        audio = audio.set_channels(1).set_frame_rate(16000)
-        audio.export("D://sample_audios//tmpfile.wav", format="wav")
-        # global wsParam
-        self.wsParam = Ws_Param(APPID='c5966e64', APISecret='NmQyNDdjNjVkNWQ2Y2ZlMGJmZDgwZWIx',
-                           APIKey='9b24f7330fc0923186ae95e0da03ccbf',
-                           AudioFile="D://sample_audios//tmpfile.wav")
-        websocket.enableTrace(False)
-        wsUrl = self.wsParam.create_url()
-        ws = websocket.WebSocketApp(wsUrl, on_message=self.on_message, on_error=self.on_error, on_close=self.on_close)
-        ws.on_open = self.on_open
-        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
-        # 使用正则表达式去除标点符号
-        cleaned_sentence = re.sub(r'[,.!^ 。…]', '', global_sentence)
-        # print("cleaned_sentence",cleaned_sentence)
         message = self.message[0]
         # print(message)
         # 提取 ws 中的内容
@@ -186,13 +168,11 @@ class SpeechToText:
         if not words:
             print("没有词汇返回")
             result = {
-                'max_word': '未识别为任何词汇',
-                'max_score': 0,
-                'target_word': target,
-                'target_score': 0
+                'text': '未成功识别',
+                'confidence': '无'
 
             }
-            return {}
+            return result
         else:
             # 动态生成权重列表，越靠前的词汇权重越高
             scores = list(range(len(words) - 1, -1, -1))  # [len(words)-1, len(words)-2, ..., 0]
@@ -206,27 +186,83 @@ class SpeechToText:
             # 计算 softmax 置信度
             confidence_scores = softmax(scores)
 
-            # 构造结果
-            result = [{'word': word, 'confidence': confidence} for word, confidence in zip(words, confidence_scores)]
+            print("cleaned_sentence", cleaned_sentence)
+            result = {
+                'text': cleaned_sentence,
+                'confidence': confidence_scores[0]
 
-            if target in words:
-                target_index = words.index(target)  # 找到目标词的索引
-                target_score = result[target_index]['confidence']  #
-            else:
-                target_score = 0
-            # 输出结果
-            # for item in result:
-            #     print(f"词: {item['word']}, 置信度: {item['confidence']:.4f}")
-
-        result = {
-            'max_word' : result[0]['word'],
-            'max_score': result[0]['confidence'],
-            'target_word': target,
-            'target_score': target_score
-
-        }
+            }
         # print(result)
         return result
+
+    def transcribe_with_labels(self, audio_file: str, labels_dict: dict) -> dict:
+        wav_file = audio_file
+        audio = AudioSegment.from_file(wav_file)
+        # 转换为单声道,降频
+        file_name = "tmpfile.wav"
+        audio = audio.set_channels(1).set_frame_rate(16000)
+        audio.export(file_name, format="wav")
+        # global wsParam
+        self.wsParam = Ws_Param(APPID='c5966e64', APISecret='NmQyNDdjNjVkNWQ2Y2ZlMGJmZDgwZWIx',
+                                APIKey='9b24f7330fc0923186ae95e0da03ccbf',
+                                AudioFile=file_name)
+        websocket.enableTrace(False)
+        wsUrl = self.wsParam.create_url()
+        ws = websocket.WebSocketApp(wsUrl, on_message=self.on_message, on_error=self.on_error,
+                                    on_close=self.on_close)
+        ws.on_open = self.on_open
+        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
+        message = self.message[0]
+        if 'data' in message and 'result' in message['data'] and 'ws' in message['data']['result']:
+            ws_list = message['data']['result']['ws'][0].get('cw', [])
+        else:
+            ws_list = []
+
+        for key, labels in labels_dict.items():
+            # 对每一个音素
+            max_confidence = -1
+            max_result = {}
+            for target in labels:
+                # 提取词汇
+                words = [item['w'] for item in ws_list]
+                # 如果没有词汇，直接返回空结果
+                if not words:
+                    print("没有词汇返回")
+                    return {}
+                else:
+                    # 动态生成权重列表，越靠前的词汇权重越高
+                    scores = list(range(len(words) - 1, -1, -1))  # [len(words)-1, len(words)-2, ..., 0]
+                    # 计算 softmax 置信度
+                    confidence_scores = softmax(scores)
+                    max_result[target] = confidence_scores
+        # 构造结果
+        result = [{'word': word, 'confidence': confidence} for word, confidence in zip(words, confidence_scores)]
+        yinsu_with_grade = {}
+        for r in result:
+            for item in labels_dict:
+                text = labels_dict[item][0]
+                if text in r['word']:
+                    # 如果已存在该字，则取最大的置信度
+                    if yinsu_with_grade[item] and yinsu_with_grade[item]['confidence'] < r['confidence']:
+                        yinsu_with_grade[item]['confidence'] = r['confidence']
+                    else:
+                        yinsu_with_grade[item] = {
+                            'text': labels_dict[item][0],
+                            'confidence': r['confidence']
+                        }
+                else:
+                    yinsu_with_grade[item] = {
+                        'text': labels_dict[item][0],
+                        'confidence': 0
+                    }
+        # 删除该文件
+        if os.path.exists(file_name):
+            os.remove(file_name)
+
+        new_dict = {
+            'yinsu_with_grade': yinsu_with_grade
+        }
+        return new_dict
 
     # 收到websocket消息的处理
     def on_message(self, ws, message):
@@ -309,9 +345,11 @@ class SpeechToText:
 
         thread.start_new_thread(run, ())
 
+
 if __name__ == "__main__":
     # Load the model with predefined API credentials
     model = SpeechToText.load_model('xunfei_api')
     # Transcribe an audio file
-    result = model.transcribe_with_labels('D://sample_audios/47_112.225.101.110_20241119074110_跛脚.wav','跛脚')
+    result = model.transcribe_with_labels(r'D:\sample_audio\selected_files\6_223.104.41.50_20241213040033_丢俩.wav',
+                                          labels_dict={"d": ["的", "de"], "p": ["坡", "pe"]})
     print(result)

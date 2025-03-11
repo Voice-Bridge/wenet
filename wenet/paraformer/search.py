@@ -143,12 +143,14 @@ def paraformer_greedy_search(
     batch_size = decoder_out.shape[0]
     maxlen = decoder_out.size(1)
     topk_prob, topk_index = decoder_out.topk(1, dim=2)
+    # topk_prob, topk_index = decoder_out
     topk_index = topk_index.view(batch_size, maxlen)  # (B, maxlen)
     topk_prob = topk_prob.view(batch_size, maxlen)
     results: List[DecodeResult] = []
     topk_index = topk_index.cpu().tolist()
     topk_prob = topk_prob.cpu().tolist()
     decoder_out_lens = decoder_out_lens.cpu().numpy()
+
     for (i, hyp) in enumerate(topk_index):
         confidence = 0.0
         tokens_confidence = []
@@ -176,6 +178,69 @@ def paraformer_greedy_search(
             assert len(result.times) == len(result.tokens)
     return results
 
+def all_paraformer_greedy_search(
+        decoder_out: torch.Tensor,
+        decoder_out_lens: torch.Tensor,
+        cif_peaks: Optional[torch.Tensor] = None) -> List[DecodeResult]:
+    batch_size = decoder_out.shape[0]
+    maxlen = decoder_out.size(1)
+    # 修改topk参数为100
+    topk_prob, topk_index = decoder_out.topk(100, dim=2)  # 获取前100候选
+
+    # 转换为列表（三维结构：[batch][maxlen][100]）
+    topk_index = topk_index.cpu().tolist()
+    topk_prob = topk_prob.cpu().tolist()
+    decoder_out_lens = decoder_out_lens.cpu().numpy()
+
+    results: List[DecodeResult] = []
+
+    for i in range(batch_size):
+        lens = decoder_out_lens[i]
+        # 获取当前样本的前100候选信息
+        hyp = topk_index[i][:lens]  # 形状 [lens, 100]
+        prob = topk_prob[i][:lens]  # 形状 [lens, 100]
+
+        # 计算基于top1的置信度
+        confidence = 0.0
+        tokens_confidence_top1 = []
+        for t in range(lens):
+            top1_logp = prob[t][0]
+            tokens_confidence_top1.append(math.exp(top1_logp))
+            confidence += top1_logp
+        avg_confidence = math.exp(confidence / lens) if lens > 0 else 0.0
+
+        # 转换所有候选的概率为指数形式
+        tokens_confidence = [
+            [math.exp(logp) for logp in time_step]
+            for time_step in prob
+        ]
+
+        # 创建包含top100候选的结果（需确保DecodeResult支持新结构）
+        r = DecodeResult(
+            tokens=hyp,  # 每个时间步的100候选token
+            tokens_confidence=tokens_confidence,  # 每个时间步的100概率
+            confidence=avg_confidence  # 基于top1的置信度
+        )
+        results.append(r)
+
+    # CIF峰值对齐（假设仍基于top1序列）
+    if cif_peaks is not None:
+        cif_peaks = cif_peaks.cpu().tolist()
+        for b in range(batch_size):
+            result = results[b]
+            peaks = cif_peaks[b]
+            times = []
+            n_token = 0
+            for i, peak in enumerate(peaks):
+                if n_token >= len(result.tokens):  # len(result.tokens)现在是时间步数
+                    break
+                if peak > 1 - 1e-4:
+                    times.append(i)
+                    n_token += 1
+            result.times = times
+            assert len(result.times) == len(result.tokens), "时间对齐错误"
+
+    return results
 
 def paraformer_beam_search(decoder_out: torch.Tensor,
                            decoder_out_lens: torch.Tensor,

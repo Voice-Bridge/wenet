@@ -80,6 +80,7 @@ class Model:
         if "npu" in self.device.__str__():
             feats = feats.to(self.device)
         feats = feats.unsqueeze(0)
+        print("feats",feats.size())
         return feats
 
     @torch.no_grad()
@@ -140,6 +141,7 @@ class Model:
     def transcribe_with_labels(self, audio_file: str, labels_dict: dict) -> dict:
         feats = self.compute_feats(audio_file)
         encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
+        print("encoder_out",encoder_out)
         encoder_lens = torch.tensor([encoder_out.size(1)],
                                     dtype=torch.long,
                                     device=encoder_out.device)
@@ -162,6 +164,7 @@ class Model:
                 rescoring_results = attention_rescoring(self.model, ctc_prefix_results,
                                                         encoder_out, encoder_lens, 0.3,
                                                         0.5)
+
                 res = rescoring_results[0]
                 result = {}
                 result['text'] = ''.join([self.char_dict[x] for x in res.tokens])
