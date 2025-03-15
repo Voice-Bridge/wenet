@@ -7,7 +7,7 @@ import torchaudio
 import torchaudio.compliance.kaldi as kaldi
 from wenet.cli.hub import Hub
 from wenet.paraformer.search import (gen_timestamps_from_peak,
-                                     paraformer_greedy_search, all_paraformer_greedy_search, paraformer_beam_search)
+                                     paraformer_greedy_search, all_paraformer_greedy_search)
 from wenet.text.paraformer_tokenizer import ParaformerTokenizer
 
 
@@ -21,29 +21,6 @@ class Paraformer:
         self.resample_rate = resample_rate
         self.device = torch.device("cpu")
         self.tokenizer = ParaformerTokenizer(symbol_table=units_path)
-
-    def compute_feats(self, audio_file: str) -> torch.Tensor:
-        waveform, sample_rate = torchaudio.load(audio_file, normalize=False)
-        waveform = waveform.to(torch.float)
-        if sample_rate != self.resample_rate:
-            waveform = torchaudio.transforms.Resample(
-                orig_freq=sample_rate, new_freq=self.resample_rate)(waveform)
-        # NOTE (MengqingCao): complex dtype not supported in torch_npu.abs() now,
-        # thus, delay placing data on NPU after the calculation of fbank.
-        # revert me after complex dtype is supported.
-        if "npu" not in self.device.__str__():
-            waveform = waveform.to(self.device)
-        feats = kaldi.fbank(waveform,
-                            num_mel_bins=80,
-                            frame_length=25,
-                            frame_shift=10,
-                            energy_floor=0.0,
-                            sample_frequency=self.resample_rate)
-        if "npu" in self.device.__str__():
-            feats = feats.to(self.device)
-        feats = feats.unsqueeze(0)
-        print("feats", feats.size())
-        return feats
 
 
     @torch.inference_mode()
@@ -156,64 +133,52 @@ class Paraformer:
         cif_peaks = self.model.forward_cif_peaks(tp_alphas, token_num)
 
         results = all_paraformer_greedy_search(decoder_out, token_num, cif_peaks)
-        # r = []
         # 通过all_greedy_search扒出来的字符及其置信度
-        dict_100 = []
-
-        # print("self.tokenizer.char_dict",self.tokenizer.char_dict)
+        dict_8404 = {}
         for (i, res) in enumerate(results):  # 遍历每个录音
             for j in range(len(res.tokens[0])):
                 result = {}
                 result['confidence'] = res.confidence
                 tokens = [res.tokens[0][j], res.tokens[1][j], res.tokens[2][j]]
-                # result['text'] = self.tokenizer.detokenize(tokens)[0]
                 if tokens_info:
-                    # tokens_info_l = []
                     times = gen_timestamps_from_peak(res.times,
                                                      num_frames=frames[i],
                                                      frame_rate=0.02)
-
                     for k, x in enumerate(tokens[:len(times)]):
-                        # tokens_info_l.append({
-                        #     'token':
-                        #         self.tokenizer.char_dict[x],
-                        #     'start':
-                        #         round(times[k][0], 3),
-                        #     'end':
-                        #         round(times[k][1], 3),
-                        #     'confidence':
-                        #         round(res.tokens_confidence[k][j], 2)
-                        # })
-                        dict_100.append({
-                            'token':
-                                self.tokenizer.char_dict[x],
-                            'confidence':
-                                round(res.tokens_confidence[k][j], 20)
-                        })
-                        # result['tokens'] = tokens_info_l
-                # r.append(result)
-                yinsu_with_grade = {}
-                for item in labels_dict:
-                    text = labels_dict[item][0]
-                    for entry in dict_100:
-                        if entry['token'] == text:
-                            yinsu_with_grade[item] = {
-                                'text' : labels_dict[item][0],
-                                'confidence' : entry['confidence']
-                            }
+                        text = self.tokenizer.char_dict[x]
+                        confidence = round(res.tokens_confidence[k][j], 20)
+                        if text in dict_8404:
+                            if dict_8404[text]['confidence'] < confidence:
+                                dict_8404[text]['confidence'] = confidence
                         else:
-                            yinsu_with_grade[item] = {
-                                'text': labels_dict[item][0],
-                                'confidence': 0
+                            dict_8404[text] = {
+                                'confidence':
+                                    confidence
                             }
-                            break  # 找到匹配项后退出内层循环以提高效率
-                new_dict = {
-                    'yinsu_with_grade': yinsu_with_grade
-                }
+        yinsu_with_grade = {}
+        for item in labels_dict:
+            all_text = [labels_dict[item][0], labels_dict[item][1]]
+            for text in all_text:
+                if text in dict_8404:
+                    confidence = dict_8404[text]['confidence']
+                    if item in yinsu_with_grade:
+                        if confidence > yinsu_with_grade[item]['confidence']:
+                            yinsu_with_grade[item]['confidence'] = confidence
+                        continue
+                    yinsu_with_grade[item] = {
+                        'text' : text,
+                        'confidence' : confidence
+                    }
+                else:
+                    yinsu_with_grade[item] = {
+                        'text': labels_dict[item][0],
+                        'confidence': 0
+                    }
+        new_dict = {
+            'yinsu_with_grade': yinsu_with_grade
+        }
+        print("Praformer的输出结果如下:")
         return new_dict
-
-
-
 
     def transcribe(self, audio_file: str, tokens_info: bool = False) -> dict:
         result = self.transcribe_batch([audio_file], tokens_info)[0]

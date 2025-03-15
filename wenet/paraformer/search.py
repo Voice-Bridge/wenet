@@ -143,7 +143,6 @@ def paraformer_greedy_search(
     batch_size = decoder_out.shape[0]
     maxlen = decoder_out.size(1)
     topk_prob, topk_index = decoder_out.topk(1, dim=2)
-    # topk_prob, topk_index = decoder_out
     topk_index = topk_index.view(batch_size, maxlen)  # (B, maxlen)
     topk_prob = topk_prob.view(batch_size, maxlen)
     results: List[DecodeResult] = []
@@ -183,9 +182,8 @@ def all_paraformer_greedy_search(
         decoder_out_lens: torch.Tensor,
         cif_peaks: Optional[torch.Tensor] = None) -> List[DecodeResult]:
     batch_size = decoder_out.shape[0]
-    maxlen = decoder_out.size(1)
     # 修改topk参数为100
-    topk_prob, topk_index = decoder_out.topk(100, dim=2)  # 获取前100候选
+    topk_prob, topk_index = decoder_out.topk(5000, dim=2)  # 获取前4000候选
 
     # 转换为列表（三维结构：[batch][maxlen][100]）
     topk_index = topk_index.cpu().tolist()

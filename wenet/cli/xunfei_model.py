@@ -243,8 +243,9 @@ class SpeechToText:
                 text = labels_dict[item][0]
                 if text in r['word']:
                     # 如果已存在该字，则取最大的置信度
-                    if yinsu_with_grade[item] and yinsu_with_grade[item]['confidence'] < r['confidence']:
-                        yinsu_with_grade[item]['confidence'] = r['confidence']
+                    if item in yinsu_with_grade:
+                        if yinsu_with_grade[item]['confidence'] < r['confidence']:
+                            yinsu_with_grade[item]['confidence'] = r['confidence']
                     else:
                         yinsu_with_grade[item] = {
                             'text': labels_dict[item][0],
@@ -262,6 +263,7 @@ class SpeechToText:
         new_dict = {
             'yinsu_with_grade': yinsu_with_grade
         }
+        print("XunfeiASR输出结果如下:")
         return new_dict
 
     # 收到websocket消息的处理
