@@ -195,8 +195,8 @@ def all_paraformer_greedy_search(
     for i in range(batch_size):
         lens = decoder_out_lens[i]
         # 获取当前样本的前100候选信息
-        hyp = topk_index[i][:lens]  # 形状 [lens, 100]
-        prob = topk_prob[i][:lens]  # 形状 [lens, 100]
+        hyp = topk_index[i][:lens]
+        prob = topk_prob[i][:lens]
 
         # 计算基于top1的置信度
         confidence = 0.0

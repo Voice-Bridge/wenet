@@ -10,6 +10,8 @@ from wenet.paraformer.search import (gen_timestamps_from_peak,
                                      paraformer_greedy_search, all_paraformer_greedy_search)
 from wenet.text.paraformer_tokenizer import ParaformerTokenizer
 
+def get_key_by_value(dict_obj, value):
+    return next((k for k, v in dict_obj.items() if v == value), None)
 
 class Paraformer:
 
@@ -129,51 +131,27 @@ class Paraformer:
 
         decoder_out, token_num, tp_alphas, frames = self.model.forward_paraformer(
             feats_tensor, feats_lens_tensor)
-        frames = frames.cpu().numpy()
-        cif_peaks = self.model.forward_cif_peaks(tp_alphas, token_num)
 
-        results = all_paraformer_greedy_search(decoder_out, token_num, cif_peaks)
-        # 通过all_greedy_search扒出来的字符及其置信度
-        dict_8404 = {}
-        for (i, res) in enumerate(results):  # 遍历每个录音
-            for j in range(len(res.tokens[0])):
-                result = {}
-                result['confidence'] = res.confidence
-                tokens = [res.tokens[0][j], res.tokens[1][j], res.tokens[2][j]]
-                if tokens_info:
-                    times = gen_timestamps_from_peak(res.times,
-                                                     num_frames=frames[i],
-                                                     frame_rate=0.02)
-                    for k, x in enumerate(tokens[:len(times)]):
-                        text = self.tokenizer.char_dict[x]
-                        confidence = round(res.tokens_confidence[k][j], 20)
-                        if text in dict_8404:
-                            if dict_8404[text]['confidence'] < confidence:
-                                dict_8404[text]['confidence'] = confidence
-                        else:
-                            dict_8404[text] = {
-                                'confidence':
-                                    confidence
-                            }
+        # 构建yinsu字典
         yinsu_with_grade = {}
         for item in labels_dict:
             all_text = [labels_dict[item][0], labels_dict[item][1]]
+            target_text = 'None'
+            target_confidence = 0
             for text in all_text:
-                if text in dict_8404:
-                    confidence = dict_8404[text]['confidence']
-                    if item in yinsu_with_grade:
-                        if confidence > yinsu_with_grade[item]['confidence']:
-                            yinsu_with_grade[item]['confidence'] = confidence
-                        continue
-                    yinsu_with_grade[item] = {
-                        'text' : text,
-                        'confidence' : confidence
-                    }
-                else:
-                    yinsu_with_grade[item] = {
-                        'text': labels_dict[item][0],
-                        'confidence': 0
-                    }
+                key = get_key_by_value(self.tokenizer.char_dict, text)
+                if key:
+                    log_probs_at_k = decoder_out[0, :, key]
+                    # 将对数概率转换为概率，并找到最大值
+                    max_confidence_at_k = torch.max(torch.exp(log_probs_at_k)).item()
+                    if max_confidence_at_k > target_confidence:
+                        target_confidence = max_confidence_at_k
+                        target_text = text
+
+            yinsu_with_grade[item] = {
+                'text': target_text,
+                'confidence': target_confidence
+            }
         new_dict = {
             'yinsu_with_grade': yinsu_with_grade
         }

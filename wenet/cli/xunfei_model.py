@@ -237,25 +237,26 @@ class SpeechToText:
                     max_result[target] = confidence_scores
         # 构造结果
         result = [{'word': word, 'confidence': confidence} for word, confidence in zip(words, confidence_scores)]
+        print("result",result)
         yinsu_with_grade = {}
         for r in result:
             for item in labels_dict:
-                text = labels_dict[item][0]
-                if text in r['word']:
-                    # 如果已存在该字，则取最大的置信度
-                    if item in yinsu_with_grade:
-                        if yinsu_with_grade[item]['confidence'] < r['confidence']:
-                            yinsu_with_grade[item]['confidence'] = r['confidence']
-                    else:
+                all_text = [labels_dict[item][0], labels_dict[item][1]]
+                for text in all_text:
+                    if text in r['word']:
+                        # 如果已存在该字，则取最大的置信度
+                        if item in yinsu_with_grade and yinsu_with_grade[item]['confidence'] > r['confidence']:
+                            continue
                         yinsu_with_grade[item] = {
-                            'text': labels_dict[item][0],
+                            'text': text,
                             'confidence': r['confidence']
                         }
-                else:
-                    yinsu_with_grade[item] = {
-                        'text': labels_dict[item][0],
-                        'confidence': 0
-                    }
+                    else:
+                        if item not in yinsu_with_grade:
+                            yinsu_with_grade[item] = {
+                                'text': text,
+                                'confidence': 0
+                            }
         # 删除该文件
         if os.path.exists(file_name):
             os.remove(file_name)
