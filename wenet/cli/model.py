@@ -179,7 +179,7 @@ class Model:
             if value['confidence'] > max_confi:
                 max_confi = value['confidence']
                 max_yinsu = key
-        print(f'===== max yinsu {max_yinsu}, max confi {max_confi}')
+        # print(f'===== max yinsu {max_yinsu}, max confi {max_confi}')
         # return {"yinsu": max_yinsu, "confidence": max_confi }
         return {"yinsu_with_grade": res_dict}
 
