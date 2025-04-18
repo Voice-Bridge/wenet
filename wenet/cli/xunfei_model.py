@@ -118,7 +118,7 @@ class SpeechToText:
     def load_model(cls, api_name: str) -> 'SpeechToText':
         """Load the model with predefined API credentials."""
         # 读取api-key
-        with open('C://Users//fanchenghao//Desktop//语雀//xunfei_apikey.json') as config_file:
+        with open('E://yuque//wenet//examples//xunfei_api//xunfei_apikey.json') as config_file:
             config = json.load(config_file)
         api_credentials = {
             'xunfei_api': {
