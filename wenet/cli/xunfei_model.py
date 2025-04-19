@@ -118,7 +118,7 @@ class SpeechToText:
     def load_model(cls, api_name: str) -> 'SpeechToText':
         """Load the model with predefined API credentials."""
         # 读取api-key
-        with open('E://yuque//wenet//examples//xunfei_api//xunfei_apikey.json') as config_file:
+        with open(os.path.join(os.path.dirname(__file__), 'xunfei_apikey.json')) as config_file:
             config = json.load(config_file)
         api_credentials = {
             'xunfei_api': {
@@ -134,16 +134,16 @@ class SpeechToText:
 
         return cls(**api_credentials[api_name])
 
-    def transcribe(self, audio_file: str, confidence: float = 0.0) -> dict:
+    def transcribe(self, audio_file: str, tokens_info: bool = False, confidence: float = 0.0) -> dict:
         wav_file = audio_file
         audio = AudioSegment.from_file(wav_file)
         # 转换为单声道,降频
         audio = audio.set_channels(1).set_frame_rate(16000)
-        audio.export("D://tmpfile.wav", format="wav")
+        audio.export(audio_file, format="wav")
         # global wsParam
         self.wsParam = Ws_Param(APPID='c5966e64', APISecret='NmQyNDdjNjVkNWQ2Y2ZlMGJmZDgwZWIx',
                                 APIKey='9b24f7330fc0923186ae95e0da03ccbf',
-                                AudioFile="D://tmpfile.wav")
+                                AudioFile=audio_file)
         websocket.enableTrace(False)
         wsUrl = self.wsParam.create_url()
         ws = websocket.WebSocketApp(wsUrl, on_message=self.on_message, on_error=self.on_error, on_close=self.on_close)

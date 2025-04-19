@@ -70,8 +70,7 @@ class Paraformer:
         r = []
         for (i, res) in enumerate(results):
             result = {}
-            result['confidence'] = res.tokens_confidence[0]
-            print("res.tokens",res.tokens[0])
+            result['confidence'] = res.tokens_confidence
             result['text'] = self.tokenizer.detokenize(res.tokens)[0]
             if tokens_info:
                 tokens_info_l = []
@@ -92,7 +91,6 @@ class Paraformer:
                     })
                     result['tokens'] = tokens_info_l
             r.append(result)
-            print("r",r)
         return r
 
     @torch.inference_mode()
