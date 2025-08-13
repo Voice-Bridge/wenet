@@ -137,6 +137,30 @@ class Model:
             result['tokens'] = tokens_info
         return result
 
+    def transcribe_with_label(self, audio_file: str, label: str) -> float:
+        feats = self.compute_feats(audio_file)
+        encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
+        encoder_lens = torch.tensor([encoder_out.size(1)],
+                                    dtype=torch.long,
+                                    device=encoder_out.device)
+        # 对每一个音素
+        label_t = self.tokenize(label)
+        ctc_prefix_results = [
+            DecodeResult(tokens=label_t,
+                         score=0.0,
+                         times=[0],
+                         nbest=[label_t],
+                         nbest_scores=[0.0],
+                         nbest_times=[[0]])
+        ]
+        rescoring_results = attention_rescoring(self.model, ctc_prefix_results,
+                                                encoder_out, encoder_lens, 0.3,
+                                                0.5)
+
+        tokens_confidence = rescoring_results[0].tokens_confidence
+        return sum(tokens_confidence)/len(tokens_confidence)
+
+
     def transcribe_with_labels(self, audio_file: str, labels_dict: dict) -> dict:
         feats = self.compute_feats(audio_file)
         encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
