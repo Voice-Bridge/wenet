@@ -14,6 +14,7 @@
 
 import os
 import copy
+from typing import List, Dict
 
 import torch
 import torchaudio
@@ -29,6 +30,7 @@ from wenet.utils.context_graph import ContextGraph
 from wenet.utils.common import TORCH_NPU_AVAILABLE  # noqa just ensure to check torch-npu
 from wenet.cli.paraformer_model import load_model as load_paraformer
 from wenet.cli.xunfei_model import SpeechToText
+from wenet.utils.pinyin2words import get_possible_words
 
 class Model:
 
@@ -137,28 +139,32 @@ class Model:
             result['tokens'] = tokens_info
         return result
 
-    def transcribe_with_label(self, audio_file: str, label: str) -> float:
+    def transcribe_with_label(self, audio_file: str, label: str) -> List[Dict[str, float]]:
         feats = self.compute_feats(audio_file)
         encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
         encoder_lens = torch.tensor([encoder_out.size(1)],
                                     dtype=torch.long,
                                     device=encoder_out.device)
         # 对每一个音素
-        label_t = self.tokenize(label)
-        ctc_prefix_results = [
-            DecodeResult(tokens=label_t,
-                         score=0.0,
-                         times=[0],
-                         nbest=[label_t],
-                         nbest_scores=[0.0],
-                         nbest_times=[[0]])
-        ]
-        rescoring_results = attention_rescoring(self.model, ctc_prefix_results,
-                                                encoder_out, encoder_lens, 0.3,
-                                                0.5)
+        labels = get_possible_words(label)
+        all_scores = [0 for _ in range(len(label))]
+        for label_ in labels:
+            label_t = self.tokenize(label_)
+            ctc_prefix_results = [
+                DecodeResult(tokens=label_t,
+                             score=0.0,
+                             times=[0],
+                             nbest=[label_t],
+                             nbest_scores=[0.0],
+                             nbest_times=[[0]])
+            ]
+            rescoring_results = attention_rescoring(self.model, ctc_prefix_results,
+                                                    encoder_out, encoder_lens, 0.3,
+                                                    0.5)
 
-        tokens_confidence = rescoring_results[0].tokens_confidence
-        return sum(tokens_confidence)/len(tokens_confidence)
+            if all_scores is None or sum(all_scores) < sum(rescoring_results[0].tokens_confidence):
+                all_scores = rescoring_results[0].tokens_confidence
+        return [{label[ind]: all_scores[ind]} for ind in range(len(label))]
 
 
     def transcribe_with_labels(self, audio_file: str, labels_dict: dict) -> dict:
