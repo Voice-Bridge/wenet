@@ -139,15 +139,14 @@ class Model:
             result['tokens'] = tokens_info
         return result
 
-    def transcribe_with_label(self, audio_file: str, label: str) -> List[Dict[str, float]]:
+    def transcribe_with_label(self, audio_file: str, target_word: str, labels: List[str]) -> List[Dict[str, float]]:
         feats = self.compute_feats(audio_file)
         encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
         encoder_lens = torch.tensor([encoder_out.size(1)],
                                     dtype=torch.long,
                                     device=encoder_out.device)
         # 对每一个音素
-        labels = get_possible_words(label)
-        all_scores = [0 for _ in range(len(label))]
+        all_scores = [0 for _ in range(len(target_word))]
         for label_ in labels:
             label_t = self.tokenize(label_)
             ctc_prefix_results = [
@@ -164,7 +163,10 @@ class Model:
 
             if all_scores is None or sum(all_scores) < sum(rescoring_results[0].tokens_confidence):
                 all_scores = rescoring_results[0].tokens_confidence
-        return [{label[ind]: all_scores[ind]} for ind in range(len(label))]
+        if is_chinese(target_word):
+            return [{target_word[ind]: all_scores[ind]} for ind in range(len(target_word))]
+        else:
+            return [{target_word: all_scores[0]}]
 
 
     def transcribe_with_labels(self, audio_file: str, labels_dict: dict) -> dict:
@@ -233,6 +235,11 @@ class Model:
 
     def align(self, audio_file: str, label: str) -> dict:
         return self._decode(audio_file, True, label)
+
+def is_chinese(v):
+    if len(v) == 0:
+        return False
+    return all(u'\u4e00' <= c <= u'\u9fff' or c == u'〇' for c in v)
 
 
 def load_model(language: str = None,
