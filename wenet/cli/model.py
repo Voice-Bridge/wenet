@@ -139,6 +139,7 @@ class Model:
             result['tokens'] = tokens_info
         return result
 
+    @torch.no_grad()
     def transcribe_with_label(self, audio_file: str, target_word: str, labels: List[str]) -> List[Dict[str, float]]:
         feats = self.compute_feats(audio_file)
         encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
