@@ -136,6 +136,7 @@ class Model:
             result['tokens'] = tokens_info
         return result
 
+    @torch.no_grad()
     def transcribe_with_labels(self, audio_file: str, labels_dict: dict) -> dict:
         feats = self.compute_feats(audio_file)
         encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
@@ -183,6 +184,53 @@ class Model:
 
     def transcribe(self, audio_file: str, tokens_info: bool = False) -> dict:
         return self._decode(audio_file, tokens_info)
+
+    @torch.no_grad()
+    def transcribe_topn(self,
+                        audio_file: str,
+                        n: int = 5,
+                        tokens_info: bool = False) -> dict:
+        """Return top-n hypotheses ranked by attention rescoring score.
+
+        Args:
+            n: number of hypotheses to return; -1 returns all beam candidates.
+        """
+        feats = self.compute_feats(audio_file)
+        encoder_out, _, _ = self.model.forward_encoder_chunk(feats, 0, -1)
+        encoder_lens = torch.tensor([encoder_out.size(1)],
+                                    dtype=torch.long,
+                                    device=encoder_out.device)
+        ctc_probs = self.model.ctc_activation(encoder_out)
+        beam = self.beam if n == -1 else max(self.beam, n)
+        ctc_prefix_results = ctc_prefix_beam_search(
+            ctc_probs,
+            encoder_lens,
+            beam,
+            context_graph=self.context_graph)
+        rescoring_results = attention_rescoring(self.model, ctc_prefix_results,
+                                                encoder_out, encoder_lens, 0.3,
+                                                0.5)
+        candidates = rescoring_results if n == -1 else rescoring_results[:n]
+
+        hypotheses = []
+        for res in candidates:
+            entry = {
+                'text': ''.join([self.char_dict[x] for x in res.tokens]),
+                'confidence': res.confidence,
+            }
+            if tokens_info:
+                frame_rate = self.model.subsampling_rate() * 0.01
+                max_duration = encoder_out.size(1) * frame_rate
+                times = gen_timestamps_from_peak(res.times, max_duration,
+                                                 frame_rate, 1.0)
+                entry['tokens'] = [{
+                    'token': self.char_dict[x],
+                    'start': round(times[i][0], 3),
+                    'end': round(times[i][1], 3),
+                    'confidence': round(res.tokens_confidence[i], 2),
+                } for i, x in enumerate(res.tokens)]
+            hypotheses.append(entry)
+        return {'hypotheses': hypotheses, 'n': len(hypotheses)}
 
     def tokenize(self, label: str):
         # TODO(Binbin Zhang): Support BPE
