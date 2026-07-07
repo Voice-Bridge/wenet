@@ -95,6 +95,8 @@ class Model:
                                     dtype=torch.long,
                                     device=encoder_out.device)
         ctc_probs = self.model.ctc_activation(encoder_out)
+        # 避免转录结果中出现英文字符
+        ctc_probs[:, :, 4:31] = -float("inf")
         if label is None:
             ctc_prefix_results = ctc_prefix_beam_search(
                 ctc_probs,
